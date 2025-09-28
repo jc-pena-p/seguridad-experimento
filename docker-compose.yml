@@ -1,0 +1,62 @@
+version: "3.9"
+
+services:
+  redis:
+    image: redis:7
+    container_name: segexp_redis
+    ports: ["6379:6379"]
+    volumes: [redis_data:/data]
+
+  auth:
+    build: .
+    container_name: segexp_auth
+    command: ["python", "auth_service.py"]
+    ports: ["5001:5001"]
+    environment:
+      - JWT_SECRET=demo-super-secret
+      - JWT_TTL_SECONDS=900
+
+  audit:
+    build: .
+    container_name: segexp_audit
+    command: ["python", "audit_service.py"]
+    ports: ["5003:5003"]
+    environment:
+      - AUDIT_DB=sqlite:////data/audit.db
+    volumes:
+      - audit_data:/data
+
+  logistics:
+    build: .
+    container_name: segexp_logistics
+    command: ["python", "logistics_service.py"]
+    ports: ["5002:5002"]
+    environment:
+      - LOG_DB=sqlite:////data/logistics.db
+      - AUDIT_URL=http://audit:5003/audit
+    volumes:
+      - logistics_data:/data
+    depends_on: [audit]
+
+  gateway:
+    build: .
+    container_name: segexp_gateway
+    command: ["python", "gateway.py"]
+    ports: ["5000:5000"]     
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - LOGISTICS_URL=http://logistics:5002
+      - HMAC_SECRET=demo-hmac-secret
+      - JWT_SECRET=demo-super-secret
+      - REQUIRE_MTLS=1
+      - CERT_DIR=/app/certs
+      - BLOCK_THRESHOLD=3
+      - BLOCK_TTL=30
+    volumes:
+      - ./certs:/app/certs:ro
+    depends_on: [redis, logistics]
+
+volumes:
+  redis_data:
+  audit_data:
+  logistics_data:
